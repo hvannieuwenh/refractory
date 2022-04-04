@@ -6,6 +6,8 @@ using IrrationalConstants:twoπ,halfπ,sqrtπ,sqrt2π,invπ,inv2π,invsqrt2,invs
 
 import ChainRulesCore
 
+include("generate_test_data.jl")
+
 function MaxCal_Refrac(num_neurons,lambda)
 
     # Inputs and Outputs
@@ -28,49 +30,62 @@ function MaxCal_Refrac(num_neurons,lambda)
 	#num_neurons=160;
     sz=num_neurons;
 
-    Params=zeros(Float64,sz[1],sz[1]+2);
+    Params=zeros(Float64, 4);
 
-    for i in 1:sz[1]
+    #temporary
+    #Params = [1, 0, 0.5, 0.5]
 
-        Time_A=readdlm("arrays/Ta_"*string(i, base = 10, pad = 0)*".csv", ',');
-		Time_Q=readdlm("arrays/Tqr_"*string(i, base = 10, pad = 0)*".csv", ',');
-		State=readdlm("arrays/S_"*string(i, base = 10, pad = 0)*".csv", ',');
+    i = 1
+    print(i)
+ 
+    #concatinates the data
+    Time_A=readdlm("salamander/Ta_"*string(i, base = 10, pad = 0)*".csv", ',');
+	Time_Q=readdlm("salamander/Tqr_"*string(i, base = 10, pad = 0)*".csv", ',');
+	State=readdlm("salamander/S_"*string(i, base = 10, pad = 0)*".csv", ',');
+    
+    #replace with test data for now
+    Time_Q, Time_A = Generate_Test_Data(81000, 0.3, 0.9, 0.7);
+    State = ones(1, 81000);
 
-        ic=zeros(Float64,1,sz[1]+1);
-		ic[end]=1;
+    for i in 2:sz[1]
+        print(i)
+        Time_A = vcat(Time_A, readdlm("salamander/Ta_"*string(i, base = 10, pad = 0)*".csv", ','));
+        Time_Q = vcat(Time_Q, readdlm("salamander/Tqr_"*string(i, base = 10, pad = 0)*".csv", ','));
+        State = hcat(State, readdlm("salamander/S_"*string(i, base = 10, pad = 0)*".csv", ','));
+    end
 
-        obj(Par)=LogLike(Par,Time_Q,State,lambda,i);
-        function g!(G,x)
-            G.=obj'(x)
-        end
+    ic=zeros(Float64, 3);
+    ic[end]=1;
+    #initial guess
+    ic = [0.5, 0.0, 0.4]
 
-        #optimize step uses automatic differentiation 
-        # BFGS estimates second derivative 
-        res=optimize(obj,g!, ic,LBFGS(; m=5, linesearch=BackTracking(order=3)));  #slow
+    obj(Par)=LogLike(Par,Time_Q,State,lambda,i);
+    function g!(G,x)
+         G.=obj'(x)
+    end
 
-        Params[i,1:sz[1]+1]=Optim.minimizer(res);
-        Params[i,end]=1/mean(Time_A);
+    #optimize step uses automatic differentiation 
+    # BFGS estimates second derivative 
+    res=optimize(obj,g!,  ic,LBFGS(; m=5, linesearch=BackTracking(order=3)));  #slow
+
+    #print(i)
+
+    Params[1:3]=Optim.minimizer(res);
+    #print(Optim.minimizer(res))
+    Params[end]=1/mean(Time_A);
 
 		
-		#Compute LogLike(Optim.minimizer(res),Time_Q,State,0,i)
-    end
+	#Compute LogLike(Optim.minimizer(res),Time_Q,State,0,i)
 
     return Params
 
 end
 
+# param = [h, J, lambda]
 function LogLike(Param,Time_Q,State,lambda,ii)
-    PPP=copy([Param[1:1:ii-1]; Param[ii+1:1:end-1]]);
-	b=Param[:,1:end-1]*State;
-	b=1/2 .+ 1/2 .* tanh.(b/2);
-	p=copy(Param[end]);
-	c=b.-p;
-	c=expm1.(c.*Time_Q)./c;
-	D=length(Time_Q);
-	z=sum(log.(c ./ b));
-
-	#return -1. * (D*log(p)+sum(log.(b)) + sum(log.(c)) - sum(b.*Time_Q)) + lambda*norm(PPP)^2;
-
-	return -1. * D*log(p) + z - sum(b.*Time_Q) + lambda*norm(PPP)^2;
-
+    b = (tanh.((Param[1] .+ Param[2]*(State' .- 1) )./2).+1)./2;
+    g = (tanh(Param[3]/2)+1)/2;
+    return -1 .* sum(log.(((g.*b)./(b .- g)).*(exp.(-g.*Time_Q).-exp.(-b.*Time_Q))));
 end
+
+print(MaxCal_Refrac(1,0.5))
