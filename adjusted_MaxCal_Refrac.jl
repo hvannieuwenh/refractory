@@ -6,7 +6,7 @@ using IrrationalConstants:twoπ,halfπ,sqrtπ,sqrt2π,invπ,inv2π,invsqrt2,invs
 
 import ChainRulesCore
 
-include("generate_test_data.jl")
+#include("generate_test_data.jl")
 
 function MaxCal_Refrac(num_neurons,lambda)
 
@@ -39,25 +39,29 @@ function MaxCal_Refrac(num_neurons,lambda)
     print(i)
  
     #concatinates the data
-    Time_A=readdlm("salamander/Ta_"*string(i, base = 10, pad = 0)*".csv", ',');
-	Time_Q=readdlm("salamander/Tqr_"*string(i, base = 10, pad = 0)*".csv", ',');
-	State=readdlm("salamander/S_"*string(i, base = 10, pad = 0)*".csv", ',');
-    
+    Time_Q=readdlm("Data/Tqr_"*string(i, base = 10, pad = 0)*".csv", ',');
+	Time_A=readdlm("Data/Ta_"*string(i, base = 10, pad = 0)*".csv", ',');
+	State=readdlm("Data/S_"*string(i, base = 10, pad = 0)*".csv", ',');
+    #Time_Q = Time_Q[1:end-1]
+
     #replace with test data for now
-    Time_Q, Time_A = Generate_Test_Data(81000, 0.3, 0.9, 0.7);
-    State = ones(1, 81000);
+    #Time_Q, Time_A = Generate_Test_Data(1000, 2, -3, 0.7);
+    #State = ones(1, 1000);
 
     for i in 2:sz[1]
-        print(i)
-        Time_A = vcat(Time_A, readdlm("salamander/Ta_"*string(i, base = 10, pad = 0)*".csv", ','));
-        Time_Q = vcat(Time_Q, readdlm("salamander/Tqr_"*string(i, base = 10, pad = 0)*".csv", ','));
-        State = hcat(State, readdlm("salamander/S_"*string(i, base = 10, pad = 0)*".csv", ','));
+        #print("i value,   ", i)
+        #println("  exra indices", "Q", size(readdlm("salamander/Tqr_"*string(i, base = 10, pad = 0)*".csv", ',')) ,"  State:  ", size(readdlm("salamander/S_"*string(i, base = 10, pad = 0)*".csv", ',')))
+        Time_A = vcat(Time_A, readdlm("Data/Ta_"*string(i, base = 10, pad = 0)*".csv", ','));
+        Time_Q = vcat(Time_Q, readdlm("Data/Tqr_"*string(i, base = 10, pad = 0)*".csv", ','));
+        State = hcat(State, readdlm("Data/S_"*string(i, base = 10, pad = 0)*".csv", ','));
     end
+
+    State = sum(State, dims=1)
 
     ic=zeros(Float64, 3);
     ic[end]=1;
     #initial guess
-    ic = [0.5, 0.0, 0.4]
+    ic = [0.0, 0.0, -4.0]
 
     obj(Par)=LogLike(Par,Time_Q,State,lambda,i);
     function g!(G,x)
@@ -77,6 +81,11 @@ function MaxCal_Refrac(num_neurons,lambda)
 		
 	#Compute LogLike(Optim.minimizer(res),Time_Q,State,0,i)
 
+
+    
+    Params[2] = Params[2]*num_neurons
+    Params[3] = (tanh(Params[3]/2)+1)/2
+
     return Params
 
 end
@@ -88,4 +97,4 @@ function LogLike(Param,Time_Q,State,lambda,ii)
     return -1 .* sum(log.(((g.*b)./(b .- g)).*(exp.(-g.*Time_Q).-exp.(-b.*Time_Q))));
 end
 
-print(MaxCal_Refrac(1,0.5))
+print(MaxCal_Refrac(10,0.5))
