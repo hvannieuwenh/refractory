@@ -77,42 +77,44 @@ end
 del_t=1;
 
 # param = [h, J, lambda]
-function LogLike(Param, Time_Q, State)
-    p = [];
+function LogLike(Param,Time_Q,State,lambda,ii)
+    
+    L = 0;
     # State needs to be adjusted here, and also in for i in ... loop, since it should be only the states in the list from 1 to tau_star = t1+t2
 
     #state here is a 2d array. For each time_Q we have the state of each interval (first needs to be the initial state value)
-    for i in 1:length(Time_Q) # note this is starting from 2 - julia indexes from 1, so in line 97 there is an error on the first loop when trying to call lam_QA[0]
+    for i in 1:Time_Q # note this is starting from 2 - julia indexes from 1, so in line 97 there is an error on the first loop when trying to call lam_QA[0]
         lam_RQ = (tanh(Param[3]/2)+1)/2; #scalar
-        lam_QA = (tanh.((Param[1] .+ Param[2]*(State[i]' .- 1) )./2).+1)./2; #array
+        lam_QA = (tanh.((Param[1] .+ Param[2]*(State[i]) )./2).+1)./2; #array
 
         #define K, array
-        K = reverse(State[i])
+        K = reverse(lam_QA)
         K = cumsum(K)
         K = reverse(K)
         K = circshift(K, -1)
-        K[end] = 0
+        K[end] = 0   
 
 
         #summation
         summation = 0
         for k in 1:length(State[i])
-            t1 = exp(-i*del_t*lam_RQ + K[k])
-            t2 = 1 - exp(del_t*(lam_RQ - lam_QA[k]))
-            t3 = lam_QA[k] - lam_RQ
-            sol = t1*t2/t3
-            summation = summation + sol
+            t1 = exp.(-i*lam_RQ .+ K[k])
+            t2 = 1 - exp.((lam_RQ .- lam_QA[k]))
+            t3 = lam_QA[k] .- lam_RQ
+            sol = t1.*t2./t3
+            summation = summation .+ sol
         end
 
-        summation = lam_RQ*lam_QA[state[end]]*summation
+        summation = lam_RQ*lam_QA[end].*summation
 
-        append!(p,summation)
+        #log likelihood calculation
+        p = log(summation)
+        L = L + p
     end
 
     #log likelihood calculation
-    p = log.(p)
-    L = sum(p)
+    #p = log.(p)
+    #L = sum(p)
 
     return -1 * L
-
 end
