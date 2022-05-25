@@ -2,6 +2,7 @@ using Random
 using CSV, Tables
 using Statistics
 using Plots
+using JLD
 
 A = ones(5, 5)
 
@@ -42,8 +43,15 @@ function Generate_Test_Data_J1(num_neurons, num_points, J, lambda_RQ, h_QA, lamb
     time_a = Vector{Vector{Float64}}([[] for k = 1:num_neurons])
     time_r = Vector{Vector{Float64}}([[] for k = 1:num_neurons])
 
+    time_q_int = [[0,0]] #keeps track of time interval betwee refractory and active 
+
     #keeps track of the state of all other nuerons at these transitions
     State = Vector{Matrix{Int64}}([state_vector_2 for k = 1:num_neurons])
+    State2 = zeros(num_neurons, 1)
+
+
+    plot_time = 0
+    plot_time_running = 0
 
 
     #num points is the number of state transitions (specified by the user)
@@ -65,10 +73,10 @@ function Generate_Test_Data_J1(num_neurons, num_points, J, lambda_RQ, h_QA, lamb
             if (state_vector[j] == 0)
                 time_vector_local = -(1/lambda_RQ)*log(1-rand(random_1));
 
-            elseif (state_vector == 1)
+            elseif (state_vector[j] == 1)
 
                 lambda_QA = ((tanh((h_QA + J*(num_active))/2))+1)/2;
-                print(lambda_QA)
+                #print(lambda_QA)
                 time_vector_local = -(1/lambda_QA)*log(1-rand(random_1));
 
 
@@ -91,6 +99,8 @@ function Generate_Test_Data_J1(num_neurons, num_points, J, lambda_RQ, h_QA, lamb
 
         #update total time in each state for each nueron
         time_vector_global  = time_vector_global .+ low_time
+        plot_time = plot_time .+ low_time
+        plot_time_running = plot_time_running .+low_time
 
         #record total time of transitioning nueron on previous state
         low_time = time_vector_global[low_time_index]
@@ -109,8 +119,12 @@ function Generate_Test_Data_J1(num_neurons, num_points, J, lambda_RQ, h_QA, lamb
             num_active -= 1
 
             #test stuff
-            push!(time_tracker, low_time)
+            push!(time_tracker, plot_time)
             push!(active_tracker, num_active)
+            plot_time = 0
+
+            #new
+            State2 = hcat(State2, state_vector_2 )
 
         elseif state_vector[low_time_index] == 1
             state_vector[low_time_index] += 1
@@ -120,13 +134,22 @@ function Generate_Test_Data_J1(num_neurons, num_points, J, lambda_RQ, h_QA, lamb
 
             state_vector_2[low_time_index] = 1
             State[low_time_index] = hcat(State[low_time_index], state_vector_2)
+
+            #new
+            temp_state_vector_2 = state_vector_2
+            #temp_state_vector_2[low_time_index] = 0
+            State2 = hcat(State2, temp_state_vector_2)
+
+            time_q_start = plot_time_running - low_time - time_r[low_time_index][end] + 1
+            time_q_int = vcat(time_q_int, [[plot_time_running - low_time - time_r[low_time_index][end], plot_time_running]])
             
             num_active += 1
 
 
             #test stuff
-            push!(time_tracker, low_time)
+            push!(time_tracker, plot_time)
             push!(active_tracker, num_active)
+            plot_time=0
         else
             state_vector[low_time_index] += 1
             push!(time_r[low_time_index], low_time)
@@ -142,7 +165,7 @@ function Generate_Test_Data_J1(num_neurons, num_points, J, lambda_RQ, h_QA, lamb
     #process data to csv files
     Process_Data(time_r, time_q, time_a, State, num_neurons)
 
-    return x, y
+    return x, y, State2, time_q_int
 
 end
 
@@ -157,8 +180,6 @@ function Process_Data(tr, tq, ta, State, num_neurons)
         t_qr = tq[l] .+ tr[l]
 
         State[l] = State[l][1:end,2:end]
-
-        print("   ", 1/mean(tq[l]), "   ")
 
 
         CSV.write("Data/Ta_"*string(l, base = 10, pad = 0)*".csv",  Tables.table(ta[l]), writeheader=false)
@@ -182,6 +203,45 @@ function Plot_Data(time, active, num_nuerons)
 end
 
 #generate data, (num_neurons, num_points, J, lambda_RQ, h_QA, lambda_AR)
-x, y = Generate_Test_Data_J1(10, 100, -30000000000, 0.01, -4.0, 0.8)
+x, y, z, interval = Generate_Test_Data_J1(1000, 8000, 0, 0.01, -5.0, 0.8)
 
 plot(x,y)
+#generate state that contains all needed data
+
+state2 = zeros(1000, floor(Int64,x[end]*10))
+
+
+j = 1
+for i in 2:size(state2)[2]
+    if i < x[j]*10
+        state2[:,i] = state2[:,i-1]
+    elseif i > x[end]*10
+        print("error with size of state2")
+    else
+        k=x[j]
+        while k*10 < i
+            global j
+            j += 1
+            k = x[j]
+        end
+        state2[:,i] = z[:,j]
+    end
+end
+
+interval = interval*10
+interval = [ceil.(m) for m in interval]
+
+
+temp_2 = ones(1, size(state2)[1])
+temp = temp_2*state2
+save("data.jld", "data", temp)
+
+#fix intervals starting at 0 instead of 1
+for (i1, i2) in enumerate(interval)
+    for (j1, j2) in enumerate(i2)
+        if trunc(j2) == 0
+            interval[i1][j1] = 1.0
+        end
+    end
+end
+save("interval.jld", "interval", interval[2:end-1])
